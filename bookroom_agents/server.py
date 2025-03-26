@@ -12,10 +12,10 @@ from bookroom_agents.api.routers.mcp_routes import create_mcp_routes
 from bookroom_agents.api.routers.server_routes import create_server_routes
 from bookroom_agents.utils.utils_api import (
     get_cors_origins,
-    parse_args,
-    logger,
+    parse_args
 )
 from bookroom_agents.api import __api_name__, __api_description__, __api_version__
+from bookroom_agents.utils.logger import logger
 
 # 确保环境变量已加载
 load_dotenv(find_dotenv(), override=True)
