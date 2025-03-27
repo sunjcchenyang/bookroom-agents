@@ -1,0 +1,10 @@
+services:
+  bookroom_agents:
+    build: .
+    ports:
+      - "${EXPOSE_PORT:-15230}:${PORT:-15230}"
+    volumes:
+      - ./docker/entrypoint.sh:/entrypoint.sh:ro
+    env_file:
+      - .env
+    restart: unless-stopped

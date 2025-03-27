@@ -1,0 +1,151 @@
+import argparse
+import os
+from typing import Optional
+
+from fastapi import HTTPException, Security
+from fastapi.security import APIKeyHeader
+from starlette.status import HTTP_403_FORBIDDEN
+
+def get_cors_origins():
+    """Get allowed origins from environment variable
+    Returns a list of allowed origins, defaults to ["*"] if not set
+    """
+    origins_str = os.getenv("CORS_ORIGINS", "*")
+    if origins_str == "*":
+        return ["*"]
+    return [origin.strip() for origin in origins_str.split(",")]
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Transcribe audio using Whisper model."
+    )
+
+    parser.add_argument(
+        "--key",
+        type=str,
+        default=os.getenv("API_KEY", None),
+        help="API key for authentication. This protects server against unauthorized access",
+    )
+
+    parser.add_argument(
+        "--download-root",
+        type=str,
+        default=os.getenv("DOWNLOAD_ROOT", "./.cache"),
+        help="Download workders for the model (default: ./.cache).",
+    )
+    parser.add_argument(
+        "--debug",
+        type=lambda x: x.lower() == "true",
+        choices=["true", "false"],
+        default=str(os.getenv("SERVER_DEBUG", "False")).lower(),
+        help="Enable debug mode. Default is False.",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=os.getenv("SERVER_HOST", "0.0.0.0"),
+        help="Host to run the server on (default: 0.0.0.0).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=os.getenv("SERVER_PORT", 15230),
+        help="Port to run the server on (default: 15230).",
+    )
+    parser.add_argument(
+        "--ssl",
+        type=lambda x: x.lower() == "true",
+        choices=["true", "false"],
+        default=str(os.getenv("SERVER_SSL", "False")).lower(),
+        help="Enable SSL. Default is False.",
+    )
+    parser.add_argument(
+        "--ssl-certfile",
+        default=os.getenv("SSL_CERTFILE", None),
+        help="Path to SSL certificate file (required if --ssl is enabled)",
+    )
+    parser.add_argument(
+        "--ssl-keyfile",
+        default=os.getenv("SSL_KEYFILE", None),
+        help="Path to SSL private key file (required if --ssl is enabled)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=os.getenv("SERVER_WORKERS", 1),
+        help="Number of workers to use for transcription (default:1).",
+    )
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Reload the model on every request (default: False).",
+    )
+    args = parser.parse_args()
+    return args
+
+
+def get_api_key_dependency(api_key: Optional[str]):
+    """
+    Create an API key dependency for route protection.
+
+    Args:
+        api_key (Optional[str]): The API key to validate against.
+                                If None, no authentication is required.
+
+    Returns:
+        Callable: A dependency function that validates the API key.
+    """
+    if not api_key:
+        # If no API key is configured, return a dummy dependency that always succeeds
+        async def no_auth():
+            return None
+
+        return no_auth
+
+    # If API key is configured, use proper authentication
+    api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
+
+    async def api_key_auth(
+        api_key_header_value: Optional[str] = Security(api_key_header),
+    ):
+        if not api_key_header_value:
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN, detail="API Key required"
+            )
+
+        if api_key_header_value.startswith("Bearer "):
+            api_key_header_value = api_key_header_value.split(" ")[1]
+        else:
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail="Invalid Authorization header format",
+            )
+
+        if api_key_header_value != api_key:
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN, detail="Invalid API Key"
+            )
+        return api_key_header_value
+
+    return api_key_auth
+
+
+def parse_keep_alive(keep_alive):
+    # 如果是负数,则返回None
+    if keep_alive is None or int(keep_alive) < 0:
+        return -1
+    # 如果是字符串,则解析为秒数,支持m,s,h格式
+    if isinstance(keep_alive, str):
+        if keep_alive.isdigit():
+            return int(keep_alive)
+        elif "m" in keep_alive:
+            return int(keep_alive[:-1]) * 60
+        elif "h" in keep_alive:
+            return int(keep_alive[:-1]) * 3600
+        elif "s" in keep_alive:
+            return int(keep_alive[:-1])
+        else:
+            raise ValueError("Invalid keep_alive format")
+    # 否则默认为5分钟（300秒）
+    return 5 * 60
